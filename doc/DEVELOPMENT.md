@@ -79,8 +79,8 @@ please raise an issue.
 
 As main CI we use GitLab, which runs all tests and checks,
 but only on branches from our repository (not on PRs from forks).
-GitHub Actions and AppVeyor also run a subset of checks
-(mostly for the JavaScript part of BenchExec) on all PRs.
+GitHub Actions also runs a subset of checks on all PRs,
+including the table-generator tests on Linux, Windows, and macOS.
 
 
 ## Releasing a new Version
@@ -119,7 +119,7 @@ GitHub Actions and AppVeyor also run a subset of checks
 
  * Push commits and tag to GitHub:
 
-        git push --tags
+        git push --follow-tags
 
  * On GitHub, create a release from the tag with a description of the changes
    (from `CHANGELOG.md`), and upload all files from `dist/`.

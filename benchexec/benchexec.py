@@ -5,7 +5,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""This module contians the tool benchexec for executing a whole benchmark (suite).
+"""This module contains the tool benchexec for executing a whole benchmark (suite).
 To use it, instantiate the "benchexec.benchexec.BenchExec"
 and either call "instance.start()" or "benchexec.benchexec.main(instance)".
 """
@@ -16,16 +16,14 @@ import logging
 import os
 import sys
 
-from benchexec import __version__
-from benchexec import BenchExecException
+from benchexec import BenchExecException, __version__, util
 from benchexec.model import Benchmark
 from benchexec.outputhandler import OutputHandler
-from benchexec import util
 
 _BYTE_FACTOR = 1000  # byte in kilobyte
 
 
-class BenchExec(object):
+class BenchExec:
     """
     The main class of BenchExec.
     It is designed to be extended by inheritance, and for example
@@ -179,7 +177,7 @@ class BenchExec(object):
             dest="timelimit",
             default=None,
             help="""
-                Time limit for each run, e.g. "90s"
+                CPU-time limit for each run, e.g. "90s"
                 (overwrites time limit and hard time limit from XML file,
                 use "-1" to disable time limits completely)
             """,
@@ -192,9 +190,9 @@ class BenchExec(object):
             dest="walltimelimit",
             default=None,
             help="""
-                Wall time limit for each run, e.g. "90s"
+                Wall-time limit for each run, e.g. "90s"
                 (overwrites wall time limit from XML file,
-                use "-1" to use CPU time limit plus a few seconds,
+                use "-1" to use CPU-time limit plus a few seconds,
                 such value is also used by default)
             """,
             metavar="SECONDS",
@@ -234,8 +232,9 @@ class BenchExec(object):
             default=None,
             type=util.parse_int_list,
             help="""
-                Limit the set of cores BenchExec will use for all runs "
-                (Applied only if the number of CPU cores is limited).
+                Limit the set of cores BenchExec will use for all runs
+                to the given set of cores
+                (applied only if the number of CPU cores is limited).
             """,
             metavar="N,M-K",
         )
@@ -255,6 +254,29 @@ class BenchExec(object):
             dest="compress_results",
             action="store_false",
             help="Do not compress result files.",
+        )
+
+        parser.add_argument(
+            "--results-per-taskset",
+            dest="results_per_taskset",
+            action="store_true",
+            help="Output a separate result file per <tasks> tag in the benchmark definition. "
+            "Can be combined with --results-per-rundefinition to produce both sets of files. "
+            "If none of these two arguments are given, "
+            "the current default is to produce both sets of files "
+            "unless there is only one <tasks> per <rundefinition> "
+            "(this default will change in the future.)",
+        )
+        parser.add_argument(
+            "--results-per-rundefinition",
+            dest="results_per_rundefinition",
+            action="store_true",
+            help="Output a separate result file per <rundefinition> tag in the benchmark definition. "
+            "Can be combined with --results-per-taskset to produce both sets of files. "
+            "If none of these two arguments are given, "
+            "the current default is to produce both sets of files "
+            "unless there is only one <tasks> per <rundefinition> "
+            "(this default will change in the future.)",
         )
 
         def parse_filesize_value(value):
@@ -376,7 +398,7 @@ class BenchExec(object):
 
             self.executor.init(self.config, benchmark)
             output_handler = OutputHandler(
-                benchmark, self.executor.get_system_info(), self.config.compress_results
+                benchmark, self.executor.get_system_info(), self.config
             )
             try:
                 logging.debug(
@@ -471,10 +493,10 @@ def add_container_args(parser):
 
 def parse_time_arg(s):
     """
-    Parse a time stamp in the "year-month-day hour-minute" format.
+    Parse a time stamp in the "year-month-day hour:minute:second" format.
     """
     try:
-        return datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+        return datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S").astimezone()
     except ValueError as e:
         raise argparse.ArgumentTypeError(e)
 
@@ -488,7 +510,7 @@ def main(benchexec=None, argv=None):
     @param benchexec: An instance of BenchExec for executing benchmarks.
     @param argv: optionally the list of command-line options to use
     """
-    if sys.version_info < (3,):
+    if sys.version_info < (3,):  # noqa: UP036 nicer errors for Python 2 users
         sys.exit("benchexec needs Python 3 to run.")
 
     try:

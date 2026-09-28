@@ -12,9 +12,9 @@ import logging
 import os
 from urllib.parse import quote as url_quote
 
+import benchexec.util
 from benchexec import __version__
 from benchexec.tablegenerator import util
-import benchexec.util
 
 _REACT_FILES = [
     os.path.join(os.path.dirname(__file__), "react-table", "build", path)
@@ -146,6 +146,29 @@ def _prepare_benchmark_setup_data(
         keys = ["tool", "version", "project_url", "version_url"]
         return {k: str(attributes[k]) for k in keys if attributes.get(k)}
 
+    def system_info_cell(attributes):
+        """Format system information, conditionally, depending on what information is available."""
+        parts = []
+        cpu = attributes.get("cpu")
+        if cpu:
+            parts.append(f"CPU: {cpu}")
+        cores = attributes.get("cores")
+        if cores:
+            parts.append(f"cores: {cores}")
+        freq = attributes.get("freq")
+        if freq:
+            parts.append(f"frequency: {freq}")
+
+        turbo = attributes.get("turbo")
+        if turbo:
+            parts.append(f"Turbo Boost: {turbo}")
+        parts_str = ", ".join(parts)
+
+        ram = attributes.get("ram")
+        if ram:
+            parts_str += f"; RAM: {ram}"
+        return parts_str
+
     def get_row(
         rowName,
         *format_args,
@@ -166,9 +189,11 @@ def _prepare_benchmark_setup_data(
             else list(zip(values, runSetWidths))
         )
 
-        return dict(  # noqa: C408
-            id=rowName.lower().split(" ")[0], name=rowName, content=valuesAndWidths
-        )
+        return {
+            "id": rowName.lower().split(" ")[0],
+            "name": rowName,
+            "content": valuesAndWidths,
+        }
 
     titles = [
         column.format_title()
@@ -176,22 +201,22 @@ def _prepare_benchmark_setup_data(
         for column in runSetResult.columns
     ]
     runSetWidths1 = [1] * sum(runSetWidths)
-    titleRow = dict(  # noqa: C408
-        id="columnTitles",
+    titleRow = {
+        "id": "columnTitles",
         # commonFileNamePrefix may contain paths, so standardize the output across OSs
-        name=util.fix_path_if_on_windows(commonFileNamePrefix),
-        content=list(zip(titles, runSetWidths1)),
-    )
+        "name": util.fix_path_if_on_windows(commonFileNamePrefix),
+        "content": list(zip(titles, runSetWidths1)),
+    }
 
     property_row = None
     if not relevant_id_columns[1]:  # property is the same for all tasks
         common_property = runSetResults[0].results[0].task_id[1]
         if common_property:
-            property_row = dict(  # noqa: C408
-                id="property",
-                name="Properties",
-                content=[[common_property.name, sum(runSetWidths)]],
-            )
+            property_row = {
+                "id": "property",
+                "name": "Properties",
+                "content": [[common_property.name, sum(runSetWidths)]],
+            }
 
     return {
         "tool": get_row("Tool", cell_format=tool_data_cell, collapse=True),
@@ -205,9 +230,8 @@ def _prepare_benchmark_setup_data(
         "os": get_row("OS", "{os}", collapse=True, onlyIf="os"),
         "system": get_row(
             "System",
-            "CPU: {cpu}, cores: {cores}, frequency: {freq}{turbo}; RAM: {ram}",
+            cell_format=system_info_cell,
             collapse=True,
-            onlyIf="cpu",
         ),
         "date": get_row("Date of execution", "{date}", collapse=True),
         "runset": get_row("Run set", "{niceName}"),
@@ -224,7 +248,7 @@ def _prepare_benchmark_setup_data(
 
 
 def _get_task_counts(rows):
-    """Calculcate number of true/false tasks and maximum achievable score."""
+    """Calculate number of true/false tasks and maximum achievable score."""
     count_true = count_false = 0
     max_score = None
     for row in rows:
@@ -361,7 +385,7 @@ def _prepare_stats(all_column_stats, rows, columns):
 
 
 def _prepare_run_sets_for_js(run_sets):
-    # Almost all run_set attributes are relevant, use blacklist here
+    # Almost all run_set attributes are relevant, use blocklist here
     run_set_exclude_keys = {"filename"}
 
     def prepare_column(column):
@@ -404,10 +428,12 @@ def _prepare_rows_for_js(rows, base_dir, href_base, relevant_id_columns):
         formatted_value = column.format_value(value, "html_cell")
         result = {}
         if column.href:
-            result["href"] = _create_link(column.href, base_dir, run_result, href_base)
             if not raw_value and not formatted_value:
                 raw_value = column.pattern
-        if raw_value is not None and not raw_value == "":
+            result["href"] = _create_link(
+                column.href, base_dir, run_result, href_base, value=raw_value
+            )
+        if raw_value is not None and raw_value != "":
             result["raw"] = raw_value
         if formatted_value and formatted_value != raw_value:
             result["html"] = formatted_value
@@ -428,13 +454,14 @@ def _prepare_rows_for_js(rows, base_dir, href_base, relevant_id_columns):
             if getattr(res, k) is not None
         }
         if toolHref:
-            result["href"] = _create_link(toolHref, base_dir, res, href_base)
+            result["href"] = _create_link(
+                toolHref, base_dir, res, href_base, value=res.status
+            )
         result["values"] = values
         return result
 
     def clean_up_row(row):
-        result = {}
-        result["id"] = [
+        id_parts = [
             str(id_part)
             for id_part, relevant in zip(row.id, relevant_id_columns)
             if id_part and relevant
@@ -442,9 +469,12 @@ def _prepare_rows_for_js(rows, base_dir, href_base, relevant_id_columns):
         # Replace first part of id (task name, which is always shown) with short name
         assert relevant_id_columns[0]
         # row.short_filename may contain paths, so standardize the output across OSs
-        result["id"][0] = util.fix_path_if_on_windows(row.short_filename)
+        id_parts[0] = util.fix_path_if_on_windows(row.short_filename)
 
-        result["results"] = [clean_up_results(res) for res in row.results]
+        result = {
+            "id": id_parts,
+            "results": [clean_up_results(res) for res in row.results],
+        }
         if row.has_sourcefile:
             result["href"] = _create_link(row.id.name, base_dir)
         return result
@@ -452,15 +482,19 @@ def _prepare_rows_for_js(rows, base_dir, href_base, relevant_id_columns):
     return [clean_up_row(row) for row in rows]
 
 
-def _create_link(href, base_dir, runResult=None, href_base=None):
+def _create_link(href, base_dir, runResult=None, href_base=None, value=None):
     def get_replacements(task_file):
         var_prefix = "taskdef_" if task_file.endswith(".yml") else "inputfile_"
-        return (
+        replacements = [
             (var_prefix + "name", os.path.basename(task_file)),
             (var_prefix + "path", os.path.dirname(task_file) or "."),
             (var_prefix + "path_abs", os.path.dirname(os.path.abspath(task_file))),
-        ) + (
-            (
+        ]
+        if value is not None:
+            replacements.append(("value", str(value)))
+
+        if runResult and runResult.log_file:
+            replacements += [
                 ("logfile_name", os.path.basename(runResult.log_file)),
                 (
                     "logfile_path",
@@ -473,10 +507,8 @@ def _create_link(href, base_dir, runResult=None, href_base=None):
                     "logfile_path_abs",
                     os.path.dirname(os.path.abspath(runResult.log_file)),
                 ),
-            )
-            if runResult.log_file
-            else ()
-        )
+            ]
+        return tuple(replacements)
 
     source_file = (
         # os.path.relpath creates os-dependant paths, so standardize the output between OSs

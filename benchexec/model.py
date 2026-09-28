@@ -5,21 +5,18 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import collections
 import collections.abc
 import functools
 import logging
 import os
 import re
 import sys
-import yaml
 from xml.etree import ElementTree
 
-from benchexec import BenchExecException
-from benchexec import intel_cpu_energy
-from benchexec import result
-from benchexec import tooladapter
-from benchexec import util
+import yaml
 
+from benchexec import BenchExecException, intel_cpu_energy, result, tooladapter, util
 
 MEMLIMIT = "memlimit"
 TIMELIMIT = "timelimit"
@@ -70,8 +67,8 @@ def substitute_vars(oldList, runSet=None, task_file=None):
             ),
             ("logfile_path", os.path.dirname(runSet.log_folder) or "."),
             ("logfile_path_abs", os.path.abspath(runSet.log_folder)),
-            ("rundefinition_name", runSet.real_name if runSet.real_name else ""),
-            ("test_name", runSet.real_name if runSet.real_name else ""),
+            ("rundefinition_name", runSet.real_name or ""),
+            ("test_name", runSet.real_name or ""),
         ]
 
     if task_file:
@@ -180,8 +177,8 @@ def load_tool_info(tool_name: str, config):
         sys.exit(
             f'Unsupported tool "{tool_name}" specified, class "Tool" is missing: {ae}'
         )
-    except TypeError as te:
-        sys.exit(f'Unsupported tool "{tool_name}" specified. TypeError: {te}')
+    except TypeError as type_error:
+        sys.exit(f'Unsupported tool "{tool_name}" specified. TypeError: {type_error}')
     assert isinstance(tool, tooladapter.CURRENT_BASETOOL)
     return tool_module, tool
 
@@ -219,6 +216,23 @@ def cmdline_for_run(
     return args
 
 
+_REQUIREDFILES_MODES = ("fail", "warn", "ignore", "skip-run")
+# "skip-run" drops individual runs and is only meaningful where required files
+# are declared per task. A benchmark-level pattern either matches for all runs
+# or for none, so skipping there would mean skipping the whole benchmark.
+_REQUIREDFILES_MODES_WITHOUT_SKIP = ("fail", "warn", "ignore")
+
+
+def _get_requiredfiles_ifmissingmode(tag, allowed_modes=_REQUIREDFILES_MODES):
+    missing_files_mode = tag.get("ifmissing", "warn")
+    if missing_files_mode not in allowed_modes:
+        raise BenchExecException(
+            f"Invalid value '{missing_files_mode}' for attribute 'ifmissing' of <requiredfiles>, "
+            f"only {', '.join(allowed_modes)} are allowed."
+        )
+    return missing_files_mode
+
+
 def get_propertytag(parent):
     tag = util.get_single_child_from_xml(parent, "propertyfile")
     if tag is None:
@@ -237,7 +251,7 @@ def get_propertytag(parent):
     return tag
 
 
-class Benchmark(object):
+class Benchmark:
     """
     The class Benchmark manages the import of source files, options, columns and
     the tool from a benchmark_file.
@@ -283,7 +297,7 @@ class Benchmark(object):
             rootTag = ElementTree.ElementTree().parse(benchmark_file)
         except ElementTree.ParseError as e:
             sys.exit(f"Benchmark file {benchmark_file} is invalid: {e}")
-        if "benchmark" != rootTag.tag:
+        if rootTag.tag != "benchmark":
             sys.exit(
                 f"Benchmark file {benchmark_file} is invalid: "
                 f"Its root element is not named 'benchmark'."
@@ -402,14 +416,24 @@ class Benchmark(object):
         # get required files
         self._required_files = set()
         for required_files_tag in rootTag.findall("requiredfiles"):
+            missing_files_mode = _get_requiredfiles_ifmissingmode(
+                required_files_tag, _REQUIREDFILES_MODES_WITHOUT_SKIP
+            )
             required_files = util.expand_filename_pattern(
                 required_files_tag.text, self.base_dir
             )
             if not required_files:
-                logging.warning(
-                    "Pattern %s in requiredfiles tag did not match any file.",
-                    required_files_tag.text,
-                )
+                if missing_files_mode == "fail":
+                    raise BenchExecException(
+                        f"Pattern {required_files_tag.text} in requiredfiles tag "
+                        f"did not match any file."
+                    )
+                elif missing_files_mode == "warn":
+                    logging.warning(
+                        "Pattern %s in requiredfiles tag did not match any file.",
+                        required_files_tag.text,
+                    )
+                # mode == "ignore": stay silent
             self._required_files = self._required_files.union(required_files)
 
         # get requirements
@@ -430,10 +454,18 @@ class Benchmark(object):
             self.result_files_patterns = ["."]
 
         # get benchmarks
+        self._skipped_run_count = 0
         self.run_sets = []
         for i, rundefinitionTag in enumerate(rootTag.findall("rundefinition")):
             self.run_sets.append(
                 RunSet(rundefinitionTag, self, i + 1, globalSourcefilesTags)
+            )
+
+        if self._skipped_run_count != 0:
+            logging.info(
+                "Skipped %d run(s) because a required-files pattern with "
+                'ifmissing="skip-run" did not match any file.',
+                self._skipped_run_count,
             )
 
         if not self.run_sets:
@@ -465,9 +497,39 @@ class Benchmark(object):
                         selected,
                     )
 
+        run_set_names = collections.Counter(
+            runSet.name for runSet in self.run_sets if runSet.should_be_executed()
+        )
+        if config.results_per_rundefinition or config.results_per_taskset:
+            # with new arguments require strict names for consistency
+            if len(run_set_names) > 1 and run_set_names[None] > 0:
+                raise BenchExecException(
+                    "Mix of named and unnamed run definitions found. "
+                    "Please add unique names to all run definitions."
+                )
+        else:
+            # for now follow old default
+            if run_set_names[""] > 1:
+                raise BenchExecException(
+                    "Cannot execute benchmark with more than one unnamed run definition. "
+                    'Please add attribute "name" to the <rundefinition> tags.'
+                )
+
+        duplicate_run_set_names = [
+            run_set_name for run_set_name, count in run_set_names.items() if count > 1
+        ]
+        if duplicate_run_set_names:
+            raise BenchExecException(
+                "Run definitions with the following names are present more than once, "
+                "please use unique names: " + ", ".join(duplicate_run_set_names)
+            )
+
     def required_files(self):
         assert self.executable is not None, "executor needs to set tool executable"
         return self._required_files.union(self.tool.program_files(self.executable))
+
+    def count_skipped_run(self):
+        self._skipped_run_count += 1
 
     def working_directory(self):
         assert self.executable is not None, "executor needs to set tool executable"
@@ -501,7 +563,7 @@ class Benchmark(object):
         return columns
 
 
-class RunSet(object):
+class RunSet:
     """
     The class RunSet manages the import of files and options of a run set.
     """
@@ -538,7 +600,8 @@ class RunSet(object):
 
         # get run-set specific required files
         required_files_pattern = {
-            tag.text for tag in rundefinitionTag.findall("requiredfiles")
+            (tag.text, _get_requiredfiles_ifmissingmode(tag))
+            for tag in rundefinitionTag.findall("requiredfiles")
         }
 
         # get all runs, a run contains one sourcefile with options
@@ -554,11 +617,20 @@ class RunSet(object):
         )
         self.runs = [run for block in self.blocks for run in block.runs]
 
-        names = [self.real_name]
-        if len(self.blocks) == 1:
-            # there is exactly one source-file set to run, append its name to run-set name
-            names.append(self.blocks[0].real_name)
-        self.name = ".".join(filter(None, names))
+        if (
+            benchmark.config.results_per_rundefinition
+            or benchmark.config.results_per_taskset
+        ):
+            # strict naming, use what user has given
+            self.real_name = self.real_name or None  # normalize "" to None
+            self.name = self.real_name
+        else:
+            # TODO: get rid of this and replace name with real_name
+            names = [self.real_name]
+            if len(self.blocks) == 1:
+                # there is exactly one source-file set to run, append its name to run-set name
+                names.append(self.blocks[0].real_name)
+            self.name = ".".join(filter(None, names))
         self.full_name = self.benchmark.name + (f".{self.name}" if self.name else "")
 
         # Currently we store logfiles as "basename.log",
@@ -595,20 +667,22 @@ class RunSet(object):
         The files and their options are taken from the list of sourcefilesTags.
         """
         base_dir = self.benchmark.base_dir
+        config = self.benchmark.config
         # runs are structured as sourcefile sets, one set represents one sourcefiles tag
         blocks = []
 
         for index, sourcefilesTag in enumerate(sourcefilesTagList):
             sourcefileSetName = sourcefilesTag.get("name")
             matchName = sourcefileSetName or str(index)
-            if self.benchmark.config.selected_sourcefile_sets and not any(
+            if config.selected_sourcefile_sets and not any(
                 util.wildcard_match(matchName, sourcefile_set)
-                for sourcefile_set in self.benchmark.config.selected_sourcefile_sets
+                for sourcefile_set in config.selected_sourcefile_sets
             ):
                 continue
 
             required_files_pattern = global_required_files_pattern.union(
-                {tag.text for tag in sourcefilesTag.findall("requiredfiles")}
+                (tag.text, _get_requiredfiles_ifmissingmode(tag))
+                for tag in sourcefilesTag.findall("requiredfiles")
             )
 
             # get lists of filenames
@@ -645,26 +719,56 @@ class RunSet(object):
                         appendFileTags,
                     )
                 if run:
-                    currentRuns.append(run)
+                    if run.should_be_skipped:
+                        self.benchmark.count_skipped_run()
+                    else:
+                        currentRuns.append(run)
 
             # add runs for cases without source files
             for run in sourcefilesTag.findall("withoutfile"):
-                currentRuns.append(
-                    Run(
-                        run.text,
-                        [],
-                        None,
-                        fileOptions,
-                        self,
-                        local_propertytag,
-                        required_files_pattern,
-                    )
+                r = Run(
+                    run.text,
+                    [],
+                    None,
+                    fileOptions,
+                    self,
+                    local_propertytag,
+                    required_files_pattern,
+                )
+                if r.should_be_skipped:
+                    self.benchmark.count_skipped_run()
+                else:
+                    currentRuns.append(r)
+
+            if config.results_per_rundefinition or config.results_per_taskset:
+                # strict naming, use what user has given
+                name = sourcefileSetName or None  # normalize "" to None
+            else:
+                # keep old behavior for now
+                name = sourcefileSetName or str(index)
+            blocks.append(SourcefileSet(sourcefileSetName, name, currentRuns))
+
+        if config.results_per_taskset:
+            # with --results-per-taskset all task sets need non-empty unique names
+            block_names = collections.Counter(block.name for block in blocks)
+            if block_names[None] > 0:
+                raise BenchExecException(
+                    f"""Unnamed task set found in run definition '{rundef_name or ""}' """
+                    "but --results-per-taskset given. "
+                    "Please add non-empty unique names to all <tasks> tags."
+                )
+            duplicate_block_names = {
+                block_name for block_name, count in block_names.items() if count > 1
+            }
+            if duplicate_block_names:
+                raise BenchExecException(
+                    f"""Run definition '{rundef_name or ""}' contains task sets """
+                    "with the following duplicate names, "
+                    "please use unique names: " + ", ".join(duplicate_block_names)
                 )
 
-            blocks.append(SourcefileSet(sourcefileSetName, index, currentRuns))
-
-        if self.benchmark.config.selected_sourcefile_sets:
-            for selected in self.benchmark.config.selected_sourcefile_sets:
+        if config.selected_sourcefile_sets:
+            for selected in config.selected_sourcefile_sets:
                 if not any(
                     util.wildcard_match(sourcefile_set.real_name, selected)
                     for sourcefile_set in blocks
@@ -895,7 +999,9 @@ class RunSet(object):
 
         return run
 
-    def expand_filename_pattern(self, pattern, base_dir, sourcefile=None):
+    def expand_filename_pattern(
+        self, pattern, base_dir, sourcefile=None, log_if_empty=True
+    ):
         """
         The function expand_filename_pattern expands a filename pattern to a sorted list
         of filenames. The pattern can contain variables and wildcards.
@@ -918,30 +1024,32 @@ class RunSet(object):
         # sort alphabetical,
         fileList.sort()
 
-        if not fileList:
+        if not fileList and log_if_empty:
             logging.warning("No files found matching %r.", pattern)
 
         return fileList
 
 
-class SourcefileSet(object):
+class SourcefileSet:
     """
     A SourcefileSet contains a list of runs and a name.
     """
 
-    def __init__(self, name, index, runs):
-        self.real_name = name  # this name is optional
-        self.name = name or str(index)  # this name is always non-empty
+    def __init__(self, real_name, name, runs):
+        self.real_name = real_name  # always contains name from benchmark definition
+        self.name = name  # TODO: remove and replace with real_name
         self.runs = runs
 
 
 _logged_missing_property_files = set()
 
 
-class Run(object):
+class Run:
     """
     A Run contains some sourcefile, some options, propertyfiles and some other stuff, that is needed for the Run.
     """
+
+    _cmdline: list[str] | None  # stores cmdline() result for later
 
     def __init__(
         self,
@@ -955,6 +1063,17 @@ class Run(object):
         required_files=[],
         expected_results={},
     ):
+        """
+        Create a Run.
+
+        Note: A Run may be created in a state where it should not actually be
+        executed (e.g., because required files are missing and ifmissing is
+        "skip-run"). In that case "should_be_skipped" is set to True and the
+        caller is responsible for discarding this Run instead of using it.
+        Ideally no object would be created at all in this case, but that would
+        require substantial restructuring of the code responsible for the
+        creation of Run.
+        """
         # identifier is used for name of logfile, substitution, result-category
         assert identifier
         self.identifier = identifier
@@ -970,18 +1089,33 @@ class Run(object):
 
         self.required_files = set(required_files)
         rel_sourcefile = os.path.relpath(self.identifier, runSet.benchmark.base_dir)
-        for pattern in required_files_patterns:
-            this_required_files = runSet.expand_filename_pattern(
-                pattern, runSet.benchmark.base_dir, rel_sourcefile
+
+        self.should_be_skipped = False
+
+        for pattern, missing_files_mode in required_files_patterns:
+            matched = self.runSet.expand_filename_pattern(
+                pattern,
+                runSet.benchmark.base_dir,
+                sourcefile=rel_sourcefile,
+                log_if_empty=False,
             )
-            if not this_required_files:
+
+            if matched:
+                self.required_files.update(matched)
+            elif missing_files_mode == "fail":
+                raise BenchExecException(
+                    f"Pattern {pattern} in requiredfiles tag did not match any file "
+                    f"for task {self.identifier}."
+                )
+            elif missing_files_mode == "warn":
                 logging.warning(
                     "Pattern %s in requiredfiles tag did not match any file for task %s.",
                     pattern,
                     self.identifier,
                 )
-            self.required_files.update(this_required_files)
-
+            elif missing_files_mode == "skip-run":
+                self.should_be_skipped = True
+            # mode == "ignore": silently keep the run without the missing file
         # combine all options to be used when executing this run
         # (reduce memory-consumption: if 2 lists are equal, do not use the second one)
         self.options = runSet.options + fileOptions if fileOptions else runSet.options
@@ -1057,6 +1191,7 @@ class Run(object):
         self.category = result.CATEGORY_UNKNOWN
 
     def cmdline(self):
+        assert not self.should_be_skipped
         assert self.runSet.benchmark.executable is not None, (
             "executor needs to set tool executable"
         )
@@ -1079,6 +1214,7 @@ class Run(object):
         @param visible_columns: a set of keys of values that should be visible by default
             (i.e., not marked as hidden), apart from those that BenchExec shows by default anyway
         """
+        assert not self.should_be_skipped
         exitcode = values.pop("exitcode", None)
         if exitcode is not None:
             if exitcode.signal:
@@ -1093,9 +1229,10 @@ class Run(object):
                     if energy_key != "cpuenergy":
                         energy_key = "@" + energy_key
                     self.values[energy_key] = energy_value
-            elif key in ["walltime", "cputime", "memory", "cpuenergy"]:
-                self.values[key] = value
-            elif key in visible_columns:
+            elif (
+                key in ["walltime", "cputime", "memory", "cpuenergy"]
+                or key in visible_columns
+            ):
                 self.values[key] = value
             else:
                 self.values["@" + key] = value
@@ -1128,6 +1265,7 @@ class Run(object):
 
     def _analyze_result(self, exitcode, output, termination_reason):
         """Return status according to result and output of tool."""
+        assert not self.should_be_skipped
 
         # Ask tool info.
         tool_status = None
@@ -1193,7 +1331,7 @@ class Run(object):
         return is_cpulimit or is_walllimit
 
 
-class Column(object):
+class Column:
     """
     The class Column contains text, title and number_of_digits of a column.
     """
@@ -1205,7 +1343,7 @@ class Column(object):
         self.value = ""
 
 
-class Requirements(object):
+class Requirements:
     """
     This class wrappes the values for the requirements.
     It parses the tags from XML to get those values.
@@ -1224,7 +1362,9 @@ class Requirements(object):
                 if self.cpu_model is None:
                     self.cpu_model = cpu_model
                 else:
-                    raise Exception("Double specification of required CPU model.")
+                    raise BenchExecException(
+                        "Double specification of required CPU model."
+                    )
 
             cpu_cores = requireTag.get("cpuCores", None)
             if cpu_cores:
@@ -1232,7 +1372,9 @@ class Requirements(object):
                     if cpu_cores is not None:
                         self.cpu_cores = int(cpu_cores)
                 else:
-                    raise Exception("Double specification of required CPU cores.")
+                    raise BenchExecException(
+                        "Double specification of required CPU cores."
+                    )
 
             memory = requireTag.get("memory", None)
             if memory:
@@ -1248,7 +1390,7 @@ class Requirements(object):
                         except ValueError:
                             self.memory = util.parse_memory_value(memory)
                 else:
-                    raise Exception("Double specification of required memory.")
+                    raise BenchExecException("Double specification of required memory.")
 
         # TODO check, if we have enough requirements to reach the limits
         # TODO is this really enough? we need some overhead!
@@ -1263,10 +1405,14 @@ class Requirements(object):
             self.cpu_model = config.cpu_model
 
         if self.cpu_cores is not None and self.cpu_cores <= 0:
-            raise Exception(f"Invalid value {self.cpu_cores} for required CPU cores.")
+            raise BenchExecException(
+                f"Invalid value {self.cpu_cores} for required CPU cores."
+            )
 
         if self.memory is not None and self.memory <= 0:
-            raise Exception(f"Invalid value {self.memory} for required memory.")
+            raise BenchExecException(
+                f"Invalid value {self.memory} for required memory."
+            )
 
     def __str__(self):
         s = ""

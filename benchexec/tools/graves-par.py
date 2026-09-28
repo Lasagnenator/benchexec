@@ -5,9 +5,10 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-from benchexec.tools.template import UnsupportedFeatureException
-from benchexec.tools.sv_benchmarks_util import get_data_model_from_task, ILP32, LP64
 import re
+
+from benchexec.tools.sv_benchmarks_util import ILP32, LP64, get_data_model_from_task
+from benchexec.tools.template import UnsupportedFeatureException
 
 coveriteam = __import__(
     "benchexec.tools.coveriteam-verifier-validator", fromlist=["Tool"]
@@ -16,7 +17,7 @@ coveriteam = __import__(
 
 class Tool(coveriteam.Tool):
     """
-    Tool infor for Graves, a verifier selector based on Graph Neural Networks
+    Tool info for Graves, a verifier selector based on Graph Neural Networks
     We inherit Coveriteam's infrastructure.
     """
 

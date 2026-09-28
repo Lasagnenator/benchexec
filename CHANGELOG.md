@@ -9,9 +9,83 @@ SPDX-License-Identifier: Apache-2.0
 
 # BenchExec Changelog
 
-## Changes since BenchExec 3.30
+## BenchExec 3.36 - not yet released
+
+- `<requiredfiles>` tags now support an optional `mode` attribute
+  that controls what happens if a pattern does not match any file:
+  `mode="fail"` lets BenchExec fail, `mode="warn"` (the default, previous
+  behavior) logs a warning per affected task, `mode="ignore"` stays silent,
+  and `mode="skip"` skips the affected task (a single summary message
+  reports how many tasks were skipped this way, not one message per task).
+
+## BenchExec 3.35 - 2026-07-03
+
+**We are planning to remove support for cgroups v1 from BenchExec in April 2027.**
+More information is in [issue 1267](https://github.com/sosy-lab/benchexec/issues/1267),
+please respond there if this is problematic for you.
+
+- When specifying hyperlinks in table definitions for `table-generator`,
+  one can now use `${value}` in addition to the existing variables
+  in order to refer to the cell's value.
+- Fix bug where directory modes for symlinks were silently ignored,
+  now BenchExec produces an error if this is attempted.
+- Several new and improved tool-info modules, in particular for SAT solvers.
+- Most of the JavaScript code for our HTML tables was migrated to TypeScript.
+  There should be no user-visible changes except for a few small bug fixes,
+  but we are thankful to [@Simon1375](https://github.com/Simon1375) for this valuable maintenance improvement!
+
+## BenchExec 3.34 - 2026-02-02
+
+- One new tool-info module.
+
+## BenchExec 3.33 - 2025-12-18
+
+- One new tool-info module.
+
+## BenchExec 3.32 - 2025-12-09
+
+- Updated tool-info modules for SV-COMP'26 and Test-Comp'26.
+
+## BenchExec 3.31 - 2025-11-24
 
 BenchExec now requires Python 3.10 or newer.
+
+- Provide command-line arguments for choosing result files of `benchexec`.  
+  So far `benchexec` writes result files for every `<rundefinition>` and `<tasks>` tag.
+  This can be convenient but also redundant,
+  and there is an inconsistency in case of a run definition with a single task set.
+  To solve this, we introduce two new command-line arguments:
+  - `--results-per-rundefinition`
+  - `--results-per-taskset`
+
+  Using them allows one to choose the desired result files,
+  either only one set of files or both.
+  If none of the arguments is given the previous default behavior is used,
+  though in BenchExec 4.0 we will change the default behavior to a more consistent one.
+- Duplicate names of `<rundefinition>` tags in the benchmark definition are now forbidden.  
+  It was an oversight that this was allowed,
+  because it would lead to output files with duplicate names,
+  i.e., some results overwriting other results.
+  Now `benchexec` detects and prevents this.
+  Until the next major release duplicate run-definition names are still allowed
+  in cases where it does not cause actual problems
+  (e.g., because only one of them is selected for execution).
+  In BenchExec 4.0 we will likely forbid such duplicate names completely.
+- Prevent overwriting results when `<tasks>` tags with duplicate names exist in the benchmark definition.  
+  Such cases lead to output files with duplicate names,
+  i.e. some results overwriting other results.
+  Now `benchexec` detects this, warns about it, and skips writing the files with duplicate names.
+  In BenchExec 4.0 we will likely forbid such duplicate names completely.
+- Fix crash on VMs where the CPU frequency is unknown.  
+  It seems this happens on some VMs on ARM Macs.
+  Thanks to [@leventeBajczi](https://github.com/leventeBajczi) for reporting and fixing this!
+- Fix crash in special cases of cgroupsv2 systems
+  with a memory limit defined outside of BenchExec
+  (e.g., by the system administrator).
+- Fix crash in case of running BenchExec inside a container
+  with an incomplete cgroupsv2 setup where we are in an out-of-tree cgroup.
+- Some performance improvements for large benchmark definitions that include task definitions more than once.
+- Many new and improved tool-info modules.
 
 ## BenchExec 3.30 - 2025-06-06
 
@@ -206,7 +280,7 @@ and thank all contributors!
 ## BenchExec 3.18 - 2023-10-20
 
 The big change in this release is the long-awaited support for cgroups v2!
-Please refer to the [installation instructions](https://github.com/sosy-lab/benchexec/blob/master/doc/INSTALL.md)
+Please refer to the [installation instructions](https://github.com/sosy-lab/benchexec/blob/main/doc/INSTALL.md)
 for how to use it (on Ubuntu/Debian, installing our package is enough).
 Note that this of course has not been tested yet on as many different systems
 as our support for cgroups v1, so there might still be some rough edges.
@@ -436,7 +510,7 @@ We would like to note that Linux kernel 5.11
 brings a major improvement for BenchExec users not on Ubuntu:
 Now it should be possible to use the overlayfs feature as a regular user,
 no need to pass `--read-only-dir /` and similar parameters.
-We updated our [installation instructions](https://github.com/sosy-lab/benchexec/blob/master/doc/INSTALL.md)
+We updated our [installation instructions](https://github.com/sosy-lab/benchexec/blob/main/doc/INSTALL.md)
 accordingly and also clarified that BenchExec requires x86 or ARM machines
 and recommend Linux kernel 4.14 or newer due to reduced cgroups overhead.
 
@@ -504,19 +578,19 @@ Changes in this release:
 
 - New API for tool-info modules (needed by `benchexec` for getting information
   about the benchmarked tool). The new API is defined by class
-  [`benchexec.tools.template.BaseTool2`](https://github.com/sosy-lab/benchexec/blob/master/benchexec/tools/template.py)
+  [`benchexec.tools.template.BaseTool2`](https://github.com/sosy-lab/benchexec/blob/main/benchexec/tools/template.py)
   and is similar to the old API, but more convenient to use and provides more
   useful information to the tool-info module.
   The old API is still supported
   and will be removed no sooner than in BenchExec 4.0. We also provide a
-  [migration guide](https://github.com/sosy-lab/benchexec/blob/master/doc/tool-integration.md#migrating-tool-info-modules-to-new-api).
+  [migration guide](https://github.com/sosy-lab/benchexec/blob/main/doc/tool-integration.md#migrating-tool-info-modules-to-new-api).
 - A new parameter `--tool-directory` for `benchexec` allows to specify
   the installation directory of the benchmarked tool easily
   without having to modify `PATH` or change into the tool's directory.
   Note that this only works if the respective tool-info module
   makes use of the new `BaseTool2` API.
 - New version 2.0 of the
-  [task-definition format](https://github.com/sosy-lab/benchexec/blob/master/doc/benchexec.md#task-definition-files)
+  [task-definition format](https://github.com/sosy-lab/benchexec/blob/main/doc/benchexec.md#task-definition-files)
   for `benchexec`.
   This format allows to specify arbitrary additional information in a key
   named `options` and `benchexec` will pass everything in this key
@@ -762,7 +836,7 @@ This release fixes two security issues, all users are encouraged to update:
 
 `benchexec` can now partition the Level 3 cache of the CPU for parallel runs
 and measure cache usage and memory bandwidth,
-at least on some Intel CPUs and if the [pqos](https://github.com/intel/intel-cmt-cat/tree/master/pqos)
+at least on some Intel CPUs and if the [pqos](https://github.com/intel/intel-cmt-cat/tree/master/pqos) # codespell:ignore master
 and [pqos_wrapper](https://gitlab.com/sosy-lab/software/pqos-wrapper) are installed.
 More information is in the [documentation](https://gitlab.com/sosy-lab/software/pqos-wrapper/wikis/home).
 
@@ -934,7 +1008,7 @@ This release contains only a few bug fixes:
 ## BenchExec 1.17 - 2018-11-28
 
 - Tasks can now be defined in a YAML-based format,
-  cf. [the documentation](https://github.com/sosy-lab/benchexec/blob/master/doc/benchexec.md#task-definition-files)
+  cf. [the documentation](https://github.com/sosy-lab/benchexec/blob/main/doc/benchexec.md#task-definition-files)
   This supports tasks with several input files,
   and allows providing metadata such as expected verdicts
   in a structured format instead of encoded in the file name.
@@ -952,7 +1026,7 @@ This release contains only a few bug fixes:
 
 ## BenchExec 1.16 - 2018-01-31
 
-- Support for [energy measurements](https://github.com/sosy-lab/benchexec/blob/master/doc/resources.md#energy)
+- Support for [energy measurements](https://github.com/sosy-lab/benchexec/blob/main/doc/resources.md#energy)
   if [cpu-energy-meter](https://github.com/sosy-lab/cpu-energy-meter) is installed.
 - Several small bug fixes and improvements
 
@@ -970,7 +1044,7 @@ This release contains only a few bug fixes:
 ## BenchExec 1.13 - 2017-11-07
 
 - For Debian/Ubuntu, the `.deb` package is now the recommended way
-  of [installation](https://github.com/sosy-lab/benchexec/blob/master/doc/INSTALL.md),
+  of [installation](https://github.com/sosy-lab/benchexec/blob/main/doc/INSTALL.md),
   because it automatically configures cgroups as necessary.
 - BenchExec now automatically attempts to use the sub-cgroup
   `system.slice/benchexec-cgroup.service` if it does not have access
@@ -1004,7 +1078,7 @@ This release contains only a few bug fixes:
   In this case, it will use the column definitions from the latter
   for tables with the separately given results.
 - The directory `contrib` of the repository now contains a script
-  [`statistics-tex.py`](https://github.com/sosy-lab/benchexec/blob/master/contrib/statistics-tex.py),
+  [`statistics-tex.py`](https://github.com/sosy-lab/benchexec/blob/main/contrib/statistics-tex.py),
   which can export summary data for benchmark results
   (e.g., number of solved tasks, average CPU time, etc.)
   to LaTeX.
@@ -1032,12 +1106,12 @@ This release brings several smaller and medium-sized features:
   which is used by SV-COMP if witness validation was not successful.
   To conform with SV-COMP's definitions, violations of the SV-COMP reachability property `unreach-call`
   will now be reported as `false(unreach-call)` instead of `false(reach)`.
-- [Measurement of block I/O](https://github.com/sosy-lab/benchexec/blob/master/doc/resources.md#disk-space-and-io) if the `blkio` cgroup controller is available
-  (experimental, please read the [documentation](https://github.com/sosy-lab/benchexec/blob/master/doc/resources.md#disk-space-and-io)!).
-- [Measurement of the energy used by the CPU](https://github.com/sosy-lab/benchexec/blob/master/doc/resources.md#energy) for a run,
+- [Measurement of block I/O](https://github.com/sosy-lab/benchexec/blob/main/doc/resources.md#disk-space-and-io) if the `blkio` cgroup controller is available
+  (experimental, please read the [documentation](https://github.com/sosy-lab/benchexec/blob/main/doc/resources.md#disk-space-and-io)!).
+- [Measurement of the energy used by the CPU](https://github.com/sosy-lab/benchexec/blob/main/doc/resources.md#energy) for a run,
   if the tool [cpu-energy-meter](https://github.com/sosy-lab/cpu-energy-meter) is installed on the system
-  (experimental, please read the [documentation](https://github.com/sosy-lab/benchexec/blob/master/doc/resources.md#energy)!).
-- [Ability to limit the disk space](https://github.com/sosy-lab/benchexec/blob/master/doc/resources.md#disk-space-and-io) a tool can occupy in container mode.
+  (experimental, please read the [documentation](https://github.com/sosy-lab/benchexec/blob/main/doc/resources.md#energy)!).
+- [Ability to limit the disk space](https://github.com/sosy-lab/benchexec/blob/main/doc/resources.md#disk-space-and-io) a tool can occupy in container mode.
 - Various minor improvements to make container mode more robust.
 - The feature for executing benchmarks under different user accounts with sudo
   is now marked as deprecated and may be removed in the future,
@@ -1057,7 +1131,7 @@ If this is a problem for you, please tell us in [issue #207](https://github.com/
 
 ## BenchExec 1.9 - 2016-05-20
 
-The main feature of this release is the addition of a [container mode](https://github.com/sosy-lab/benchexec/blob/master/doc/container.md)
+The main feature of this release is the addition of a [container mode](https://github.com/sosy-lab/benchexec/blob/main/doc/container.md)
 that allows to isolate runs from each other and from the host,
 for example preventing filesystem and network accesses.
 It also allows to collect and store all files created by the tool in a run.
@@ -1088,7 +1162,7 @@ Further changes:
   are stored in a ZIP file instead of a regular directory.
   All features continue to work with compressed results,
   including extraction of values from log files and viewing log files from HTML tables
-  (cf. [table-generator documentation](https://github.com/sosy-lab/benchexec/blob/master/doc/table-generator.md) for more details).
+  (cf. [table-generator documentation](https://github.com/sosy-lab/benchexec/blob/main/doc/table-generator.md) for more details).
   Compressed and uncompressed results are handled transparently and can be mixed,
   and using results that were manually compressed or decompressed
   is also supported.
@@ -1194,7 +1268,7 @@ Other changes:
 - Measure and report CPU time usage per core
   (hidden by default in tables, use `table-generator --all-columns` to show).
 - Parameter `--user` allows executing benchmarks under a different user
-  (cf. https://github.com/sosy-lab/benchexec/blob/master/doc/separate-user.md).
+  (cf. https://github.com/sosy-lab/benchexec/blob/main/doc/separate-user.md).
 - Performance improvements for table-generator,
   including parallel processing of input and output files and statistics.
 - HTML Tables support filtering rows by task name.

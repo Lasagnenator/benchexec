@@ -10,35 +10,28 @@ import functools
 import glob
 import logging
 import os
-from pathlib import Path
 import re
 import shlex
 import shutil
 import subprocess
-from typing import List
+from pathlib import Path
 
-import benchexec.result as result
 import benchexec.tools.template
+from benchexec import result
 from benchexec.tools.sv_benchmarks_util import (
-    get_data_model_from_task,
     ILP32,
     LP64,
-    handle_witness_of_task,
     TaskFilesConsidered,
+    get_data_model_from_task,
+    handle_witness_of_task,
 )
-from benchexec.tools.template import ToolNotFoundException
-from benchexec.tools.template import UnsupportedFeatureException
+from benchexec.tools.template import ToolNotFoundException, UnsupportedFeatureException
 
 _OPTION_NO_WRAPPER = "--force-no-wrapper"
 _SVCOMP17_VERSIONS = {"f7c3ed31"}
 _SVCOMP17_FORBIDDEN_FLAGS = {"--full-output", "--architecture"}
 _ULTIMATE_VERSION_REGEX = re.compile(r"^Version is (.*)$", re.MULTILINE)
-# .jar files that are used as launcher arguments with most recent .jar first
-_LAUNCHER_JARS = [
-    "plugins/org.eclipse.equinox.launcher_1.5.800.v20200727-1323.jar",
-    "plugins/org.eclipse.equinox.launcher_1.3.100.v20150511-1540.jar",
-    "plugins/org.eclipse.equinox.launcher_1.6.800.v20240513-1750.jar",
-]
+_JAR_LAUNCHER_PATTERN = r"plugins/org.eclipse.equinox.launcher_*.jar"
 
 
 class UltimateTool(benchexec.tools.template.BaseTool2):
@@ -81,7 +74,7 @@ class UltimateTool(benchexec.tools.template.BaseTool2):
         exe = tool_locator.find_executable("Ultimate.py")
         dir_name = Path(os.path.dirname(exe))
         logging.debug("Checking if %s contains a launcher jar", dir_name)
-        if any((dir_name / rel_launcher).exists() for rel_launcher in _LAUNCHER_JARS):
+        if any(dir_name.glob(_JAR_LAUNCHER_PATTERN)):
             return exe
         msg = (
             f"ERROR: Did find a Ultimate.py in {os.path.dirname(exe)} "
@@ -130,9 +123,8 @@ class UltimateTool(benchexec.tools.template.BaseTool2):
         try:
             process = subprocess.run(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True,
+                capture_output=True,
+                text=True,
             )
         except OSError as e:
             logging.warning(
@@ -169,11 +161,12 @@ class UltimateTool(benchexec.tools.template.BaseTool2):
     @functools.lru_cache
     def _get_current_launcher_jar(self, executable):
         ultimate_dir = os.path.dirname(executable)
-        for jar in _LAUNCHER_JARS:
-            launcher_jar = os.path.join(ultimate_dir, jar)
-            if os.path.isfile(launcher_jar):
-                return launcher_jar
-        raise FileNotFoundError(f"No suitable launcher jar found in {ultimate_dir}")
+        launcher_candidates = glob.glob(_JAR_LAUNCHER_PATTERN, root_dir=ultimate_dir)
+        if not launcher_candidates:
+            raise FileNotFoundError(f"No suitable launcher jar found in {ultimate_dir}")
+        if len(launcher_candidates) > 1:
+            raise FileNotFoundError(f"Multiple launcher jars found in {ultimate_dir}")
+        return os.path.join(ultimate_dir, launcher_candidates[0])
 
     @functools.lru_cache
     def version(self, executable):
@@ -195,7 +188,7 @@ class UltimateTool(benchexec.tools.template.BaseTool2):
             return False
 
         version = self.version(executable)
-        ult, wrapper = version.split("-")
+        ult, _wrapper = version.split("-")
         major, minor, patch = ult.split(".")
         # all versions before 0.1.24 do not require ultimatedata
         return not (int(major) == 0 and int(minor) < 2 and int(patch) < 24)
@@ -234,7 +227,7 @@ class UltimateTool(benchexec.tools.template.BaseTool2):
         )
         raise UnsupportedFeatureException(msg)
 
-    def _get_additional_data_model_from_task(self, options, task) -> List[str]:
+    def _get_additional_data_model_from_task(self, options, task) -> list[str]:
         data_model_param = get_data_model_from_task(
             task, {ILP32: "32bit", LP64: "64bit"}
         )
@@ -367,7 +360,7 @@ class UltimateTool(benchexec.tools.template.BaseTool2):
         return [executable] + self._program_files_from_executable(executable, paths)
 
     def determine_result(self, run):
-        if any(arg for arg in run.cmdline if "--spec" == arg or ".prp" in arg):
+        if any(arg for arg in run.cmdline if arg == "--spec" or ".prp" in arg):
             return self._determine_result_with_property_file(run)
         return self._determine_result_without_property_file(run)
 
@@ -455,11 +448,7 @@ class UltimateTool(benchexec.tools.template.BaseTool2):
             "Reason: overapproximation of bitwiseComplement",
         ]
 
-        for trigger in triggers:
-            if trigger in line:
-                return True
-
-        return False
+        return any(trigger in line for trigger in triggers)
 
     @staticmethod
     def _determine_result_with_property_file(run):
@@ -531,7 +520,7 @@ class UltimateTool(benchexec.tools.template.BaseTool2):
                     [candidate, "-version"],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
-                    universal_newlines=True,
+                    text=True,
                 )
             except OSError:
                 continue
@@ -550,7 +539,7 @@ class UltimateTool(benchexec.tools.template.BaseTool2):
         return rtr
 
     @staticmethod
-    def _is_sublist_or_equal(small: List, big: List) -> bool:
+    def _is_sublist_or_equal(small: list, big: list) -> bool:
         for i in range(len(big) - len(small) + 1):
             for j in range(len(small)):
                 if str(big[i + j]) != str(small[j]):

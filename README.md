@@ -17,10 +17,6 @@ SPDX-License-Identifier: Apache-2.0
 [![DOI](https://zenodo.org/badge/30758422.svg)](https://zenodo.org/badge/latestdoi/30758422)
 
 **News and Updates**:
-- [Taito Ohsumi](https://github.com/t0hsumi) got accepted with their
-  [project for adding optional timestamps to logs](https://summerofcode.withgoogle.com/programs/2025/projects/AAnqA9dr)
-  for participation in [Google Summer of Code](https://summerofcode.withgoogle.com/)!
-  Congratulations and thanks to Google for providing the opportunity!
 - BenchExec 3.25 can use [fuse-overlayfs](https://github.com/containers/fuse-overlayfs/) to make container mode work out-of-the-box again!
 - BenchExec 3.18 brings support for systems with cgroups v2!
 - We now provide an [Ubuntu PPA](https://launchpad.net/~sosy-lab/+archive/ubuntu/benchmarking) that makes installing and upgrading BenchExec easier ([docs](https://github.com/sosy-lab/benchexec/blob/main/doc/INSTALL.md#debianubuntu)).
@@ -138,28 +134,35 @@ Contributors:
 - [Thomas Bunk](https://github.com/TBunk)
 - [Montgomery Carter](https://github.com/MontyCarter)
 - [Po-Chun Chien](https://github.com/Po-Chun-Chien)
-- [Andreas Donig](https://github.com/adonig)
+- [Andreas Donig](https://github.com/adonig)    <!-- codespell:ignore -->
+- [Jiayi Du](https://github.com/Jah-yee)
 - [Florian Eder](https://github.com/schroeding)
 - [Karlheinz Friedberger](https://www.sosy-lab.org/people/friedberger)
 - [Robin Gloster](https://github.com/globin)
 - [Sam Grayson](https://github.com/charmoniumQ)
 - Peter Häring
 - [Florian Heck](https://github.com/fheck)
+- [Simon Huemmer](https://github.com/Simon1375)
 - [Chinmay Joshi](https://github.com/JawHawk)
 - [George Karpenkov](http://metaworld.me/)
 - [Mike Kazantsev](http://fraggod.net/)
 - [Hugo van Kemenade](https://github.com/hugovk)
 - [Tobias Kleinert](https://github.com/Sowasvonbot)
 - [Michael Lachner](https://github.com/lachnerm)
+- [Anas Lari](https://github.com/anaslari23)
 - [Thomas Lemberger](https://www.sosy-lab.org/people/lemberger/)
 - [Lorenz Leutgeb](https://github.com/lorenzleutgeb)
 - [Sebastian Ott](https://github.com/ottseb)
 - Stefan Löwe
 - [Stephan Lukasczyk](https://github.com/stephanlukasczyk)
 - [Tobias Meggendorfer](https://github.com/incaseoftrouble)
+- [Martin Pýcha](https://github.com/martinpycha)
 - Alexander von Rhein
+- [Rotzbua](https://github.com/Rotzbua)
+- [Simmo Saan](https://github.com/sim642)
 - [Alexander Schremmer](https://www.xing.com/profile/Alexander_Schremmer)
 - [Dennis Simon](https://github.com/DennisSimon)
+- [Saurabh Singh](https://github.com/saurabh12nxf)
 - [Andreas Stahlbauer](http://stahlbauer.net/)
 - [Thomas Stieglmaier](https://stieglmaier.me/)
 - [Martin Yankov](https://github.com/marto97)
@@ -185,7 +188,7 @@ The developers of the following tools use BenchExec:
 
 - [CPAchecker](https://cpachecker.sosy-lab.org), also for regression testing
 - [Dartagnan](https://github.com/hernanponcedeleon/Dat3M)
-- [ESBMC](https://github.com/esbmc/esbmc), also for regression testing and even with a [GitHub action](https://github.com/esbmc/esbmc/blob/master/.github/workflows/benchexec.yml) for BenchExec
+- [ESBMC](https://github.com/esbmc/esbmc), also for regression testing and even with a [GitHub action](https://github.com/esbmc/esbmc/blob/master/.github/workflows/benchexec.yml) for BenchExec  <!-- codespell:ignore master-->
 - [SMACK](https://github.com/smackers/smack)
 - [SMTInterpol](https://github.com/ultimate-pa/smtinterpol)
 - [TriCera](https://github.com/uuverifiers/tricera)

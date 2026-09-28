@@ -4,11 +4,11 @@
 # SPDX-FileCopyrightText: 2007-2020 Dirk Beyer <https://www.sosy-lab.org>
 #
 # SPDX-License-Identifier: Apache-2.0
-import benchexec.result as result
 import benchexec.tools.template
+from benchexec import result
 from benchexec.tools.sv_benchmarks_util import (
-    handle_witness_of_task,
     TaskFilesConsidered,
+    handle_witness_of_task,
 )
 
 
@@ -49,3 +49,18 @@ class Tool(benchexec.tools.template.BaseTool2):
                 return result.RESULT_ERROR + "(" + line[len("Verdict: ") :] + ")"
 
         return result.RESULT_UNKNOWN
+
+    # Taken from cpachecker.py (slightly modified; we accept the latest value, not the first)
+    def get_value_from_output(self, output, identifier):
+        # search for the text in output and get its value,
+        # search the first line, that starts with the searched text
+        # warn if there are more lines (multiple statistics from sequential analysis?)
+        match = None
+        for line in output:
+            if line.lstrip().startswith(identifier):
+                startPosition = line.find(":") + 1
+                endPosition = line.find("(", startPosition)
+                if endPosition == -1:
+                    endPosition = len(line)
+                match = line[startPosition:endPosition].strip()
+        return match

@@ -5,8 +5,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-from benchexec.tools.sv_benchmarks_util import get_data_model_from_task, ILP32, LP64
 import benchexec.tools.template
+from benchexec.tools.sv_benchmarks_util import ILP32, LP64, get_data_model_from_task
 
 
 class Tool(benchexec.tools.template.BaseTool2):
@@ -30,4 +30,6 @@ class Tool(benchexec.tools.template.BaseTool2):
         data_model_param = get_data_model_from_task(task, {ILP32: "-m32", LP64: "-m64"})
         if data_model_param and data_model_param not in options:
             options += [data_model_param]
+        if task.property_file:
+            options += [f"--property-file={task.property_file}"]
         return [executable] + options + [task.single_input_file]

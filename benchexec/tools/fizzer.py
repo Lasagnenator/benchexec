@@ -5,9 +5,11 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import functools
+
 import benchexec.tools.template
-import benchexec.result as result
-from benchexec.tools.sv_benchmarks_util import get_data_model_from_task, ILP32, LP64
+from benchexec import result
+from benchexec.tools.sv_benchmarks_util import ILP32, LP64, get_data_model_from_task
 
 
 class Tool(benchexec.tools.template.BaseTool2):
@@ -15,12 +17,12 @@ class Tool(benchexec.tools.template.BaseTool2):
     Tool info for fizzer.
     """
 
-    REQUIRED_PATHS = ["lib", "lib32", "tools"]
+    REQUIRED_PATHS = ["lib", "lib32", "tools", "fizzer"]
 
     def name(self):
         """
         Return the name of the tool, formatted for humans.
-        This method always needs to be overriden, and typically just contains
+        This method always needs to be overridden, and typically just contains
         return "My Toolname"
         @return a non-empty string
         """
@@ -41,6 +43,7 @@ class Tool(benchexec.tools.template.BaseTool2):
         """
         return tool_locator.find_executable("sbt-fizzer.py")
 
+    @functools.cache
     def version(self, executable):
         """
         Determine a version string for this tool, if available.
@@ -70,8 +73,16 @@ class Tool(benchexec.tools.template.BaseTool2):
         data_model = get_data_model_from_task(task, {ILP32: ["--m32"], LP64: []})
         if data_model is None:
             data_model = []
+        prp = (
+            ["--property", task.property_file]
+            if task.property_file and self.version(executable) == "1.2.3"
+            else []
+        )
         return (
-            [executable, "--input_file", task.single_input_file] + options + data_model
+            [executable, "--input_file", task.single_input_file]
+            + options
+            + data_model
+            + prp
         )
 
     def determine_result(self, run):
@@ -91,6 +102,12 @@ class Tool(benchexec.tools.template.BaseTool2):
         """
         if not run.output:
             return result.RESULT_UNKNOWN
+
+        mark = "--- TestCompResult ---"
+        txt = run.output.text
+        mark_idx = txt.find(mark)
+        if mark_idx != -1:
+            return txt[mark_idx + len(mark) :].strip().splitlines()[-1]
 
         compilation = None
         instrumentation = None

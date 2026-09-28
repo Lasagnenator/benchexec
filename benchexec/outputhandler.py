@@ -11,23 +11,22 @@ import collections
 import datetime
 import decimal
 import io
+import logging
+import math
 import os
 import shlex
+import sys
 import threading
 import time
-import sys
+import zipfile
 
 # Need to disable pytype for minidom due to https://github.com/google/pytype/issues/1130
 from xml.dom import minidom  # pytype: disable=pyi-error
 from xml.etree import ElementTree
-import zipfile
 
 import benchexec
-from benchexec.model import MEMLIMIT, TIMELIMIT, CORELIMIT
-from benchexec import filewriter
-from benchexec import intel_cpu_energy
-from benchexec import result
-from benchexec import util
+from benchexec import filewriter, intel_cpu_energy, result, util
+from benchexec.model import CORELIMIT, MEMLIMIT, TIMELIMIT
 
 RESULT_XML_PUBLIC_ID = "+//IDN sosy-lab.org//DTD BenchExec result 3.12//EN"
 RESULT_XML_SYSTEM_ID = "https://www.sosy-lab.org/benchexec/result-3.12.dtd"
@@ -67,19 +66,21 @@ TIME_PRECISION = 2
 _BYTE_FACTOR = 1000  # byte in kilobyte
 
 
-class OutputHandler(object):
+class OutputHandler:
     """
     The class OutputHandler manages all outputs to the terminal and to files.
     """
 
     print_lock = threading.Lock()
 
-    def __init__(self, benchmark, sysinfo, compress_results):
+    def __init__(self, benchmark, sysinfo, config):
         """
         The constructor of OutputHandler collects information about the benchmark and the computer.
         """
 
-        self.compress_results = compress_results
+        self.compress_results = config.compress_results
+        self.results_per_rundefinition = config.results_per_rundefinition
+        self.results_per_taskset = config.results_per_taskset
         self.all_created_files = set()
         self.benchmark = benchmark
         self.statistics = Statistics()
@@ -116,7 +117,7 @@ class OutputHandler(object):
             )
         self.xml_file_names = []
 
-        if compress_results:
+        if self.compress_results:
             self.log_zip = zipfile.ZipFile(
                 benchmark.log_zip, mode="w", compression=zipfile.ZIP_DEFLATED
             )
@@ -140,12 +141,21 @@ class OutputHandler(object):
                 return
 
         osElem = ElementTree.Element("os", name=opSystem)
-        cpuElem = ElementTree.Element(
-            "cpu",
-            model=cpu_model,
-            cores=cpu_number_of_cores,
-            frequency=str(cpu_max_frequency) + "Hz",
-        )
+
+        if cpu_max_frequency is not None:
+            cpuElem = ElementTree.Element(
+                "cpu",
+                model=cpu_model,
+                cores=cpu_number_of_cores,
+                frequency=str(cpu_max_frequency) + "Hz",
+            )
+        else:
+            cpuElem = ElementTree.Element(
+                "cpu",
+                model=cpu_model,
+                cores=cpu_number_of_cores,
+            )
+
         if cpu_turboboost is not None:
             cpuElem.set("turboboostActive", str(cpu_turboboost).lower())
         ramElem = ElementTree.Element("ram", size=str(memory) + "B")
@@ -228,7 +238,12 @@ class OutputHandler(object):
         run_sets = [
             runSet for runSet in self.benchmark.run_sets if runSet.should_be_executed()
         ]
-        if len(run_sets) == 1:
+        if (
+            not self.results_per_taskset
+            and not self.results_per_rundefinition
+            and len(run_sets) == 1
+        ):
+            # for now follow old default:
             # in case there is only a single run set to to execute, we can use its name
             runSetName = run_sets[0].name
 
@@ -259,7 +274,9 @@ class OutputHandler(object):
             )
             + format_line("benchmark definition", self.benchmark.benchmark_file)
             + format_line("name", self.benchmark.name)
-            + format_line("run sets", ", ".join(run_set.name for run_set in run_sets))
+            + format_line(
+                "run sets", ", ".join(run_set.name or "" for run_set in run_sets)
+            )
             + format_line(
                 "date", self.benchmark.start_time.strftime("%a, %Y-%m-%d %H:%M:%S %Z")
             )
@@ -291,20 +308,19 @@ class OutputHandler(object):
         )
 
         if sysinfo:
-            header += (
-                "   SYSTEM INFORMATION\n"
-                + format_line("host", sysinfo.hostname)
-                + format_line("os", sysinfo.os)
-                + format_line("cpu", sysinfo.cpu_model)
-                + format_line("- cores", sysinfo.cpu_number_of_cores)
-                + format_line(
+            header += "   SYSTEM INFORMATION\n"
+            header += format_line("host", sysinfo.hostname)
+            header += format_line("os", sysinfo.os)
+            header += format_line("cpu", sysinfo.cpu_model)
+            header += format_line("- cores", sysinfo.cpu_number_of_cores)
+            if sysinfo.cpu_max_frequency is not None:
+                header += format_line(
                     "- max frequency",
                     str(sysinfo.cpu_max_frequency / 1000 / 1000) + " MHz",
                 )
-                + format_line("- turbo boost enabled", sysinfo.cpu_turboboost)
-                + format_byte("ram", sysinfo.memory)
-                + simpleLine
-            )
+            header += format_line("- turbo boost enabled", sysinfo.cpu_turboboost)
+            header += format_byte("ram", sysinfo.memory)
+            header += simpleLine
 
         self.description = header
 
@@ -391,12 +407,16 @@ class OutputHandler(object):
         elif not self.benchmark.config.start_time:
             runSet.xml.set("starttime", util.read_local_time().isoformat())
 
-        # write (empty) results to XML
-        runSet.xml_file_name = xml_file_name
-        self._write_rough_result_xml_to_file(runSet.xml, runSet.xml_file_name)
-        runSet.xml_file_last_modified_time = time.monotonic()
-        self.all_created_files.add(runSet.xml_file_name)
-        self.xml_file_names.append(runSet.xml_file_name)
+        # write (empty) results to XML if we have a file for the rundefinition
+        if self.results_per_rundefinition or not self.results_per_taskset:
+            runSet.xml_file_name = xml_file_name
+            self._write_rough_result_xml_to_file(runSet.xml, runSet.xml_file_name)
+            runSet.xml_file_last_modified_time = time.monotonic()
+            self.all_created_files.add(runSet.xml_file_name)
+            self.xml_file_names.append(runSet.xml_file_name)
+        else:
+            # make sure to never write intermediate files
+            runSet.xml_file_last_modified_time = math.inf
 
     def output_for_skipping_run_set(self, runSet, reason=None):
         """
@@ -591,10 +611,26 @@ class OutputHandler(object):
 
         # Write results to files. This overwrites the intermediate files written
         # from output_after_run with the proper results.
-        self._write_pretty_result_xml_to_file(runSet.xml, runSet.xml_file_name)
+        if self.results_per_rundefinition or not self.results_per_taskset:
+            self._write_pretty_result_xml_to_file(runSet.xml, runSet.xml_file_name)
 
-        if len(runSet.blocks) > 1:
+        if self.results_per_taskset or (
+            not self.results_per_rundefinition and len(runSet.blocks) > 1
+        ):
+            block_names = collections.Counter(block.name for block in runSet.blocks)
+            duplicate_block_names = {
+                block_name for block_name, count in block_names.items() if count > 1
+            }
+            if duplicate_block_names:
+                logging.warning(
+                    "For run definition '%s' the following task-set names are not unique "
+                    "and will not have separate result files: %s",
+                    runSet.name,
+                    ", ".join(duplicate_block_names),
+                )
             for block in runSet.blocks:
+                if block.name in duplicate_block_names:
+                    continue
                 blockFileName = self.get_filename(runSet.name, block.name + ".xml")
                 block_xml = self.runs_to_xml(runSet, block.runs, block.name)
                 block_xml.set("starttime", runSet.xml.get("starttime"))
@@ -713,11 +749,11 @@ class OutputHandler(object):
             hidden = False
 
         if not value_suffix and not isinstance(value, (str, bytes)):
-            if title.startswith("cputime") or title.startswith("walltime"):
+            if title.startswith(("cputime", "walltime")):
                 value_suffix = "s"
             elif title.startswith("cpuenergy"):
                 value_suffix = "J"
-            elif title.startswith("blkio-") or title.startswith("memory"):
+            elif title.startswith(("blkio-", "memory")):
                 value_suffix = "B"
             elif title.startswith("llc"):
                 if not title.startswith("llc_misses"):
@@ -747,9 +783,9 @@ class OutputHandler(object):
     ):
         """
         @param sourcefile: title of a sourcefile
-        @param status: status of programm
-        @param cputime_delta: time from running the programm
-        @param walltime_delta: time from running the programm
+        @param status: status of program
+        @param cputime_delta: time from running the program
+        @param walltime_delta: time from running the program
         @param columns: list of columns with a title or a value
         @param isFirstLine: boolean for different output of headline and other lines
         @return: a line for the outputFile
@@ -867,8 +903,7 @@ class OutputHandler(object):
         """
         Formats the file name of a program for printing on console.
         """
-        if fileName.startswith(runSet.common_prefix):
-            fileName = fileName[len(runSet.common_prefix) :]
+        fileName = fileName.removeprefix(runSet.common_prefix)
         return fileName.ljust(runSet.max_length_of_filename + 4)
 
     def _write_rough_result_xml_to_file(self, xml, filename):
@@ -926,7 +961,7 @@ class OutputHandler(object):
         return filename
 
 
-class Statistics(object):
+class Statistics:
     def __init__(self):
         self.dic = collections.defaultdict(int)
         self.counter = 0

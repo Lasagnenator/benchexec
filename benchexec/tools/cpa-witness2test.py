@@ -5,12 +5,11 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-import benchexec.tools.cpachecker as cpachecker
-
-from benchexec.tools.template import ToolNotFoundException
+from benchexec.tools import cpachecker
 from benchexec.tools.sv_benchmarks_util import (
     get_single_non_witness_input_file,
 )
+from benchexec.tools.template import ToolNotFoundException
 
 
 class Tool(cpachecker.Tool):
@@ -20,7 +19,7 @@ class Tool(cpachecker.Tool):
 
     def executable(self, tool_locator):
         # Makes sure that CPAchecker can be called, shows a warning otherwise
-        super(Tool, self).executable(tool_locator)
+        super().executable(tool_locator)
         # The following will perform these lookups (if --tool-directory is not given)
         # and pick the first one that is found:
         # 1. cpa-witness2test in PATH
@@ -41,7 +40,10 @@ class Tool(cpachecker.Tool):
                 raise e1
 
     def version(self, executable):
-        stdout = self._version_from_tool(executable, "-version")
+        # try the new version flag first, else fallback to the old one
+        stdout = self._version_from_tool(executable, "--version")
+        if not stdout:
+            stdout = self._version_from_tool(executable, "-version")
         version = stdout.split("(")[0].strip()
         return version
 

@@ -127,13 +127,13 @@ git tag -s "$VERSION" -m "Release $VERSION"
 
 
 # Upload and finish
-read -p "Everything finished, do you want to release version '$VERSION' publically? (y/n) " -n 1 -r
+read -p "Everything finished, do you want to release version '$VERSION' publicly? (y/n) " -n 1 -r
 echo
 if ! [[ $REPLY =~ ^[Yy]$ ]]; then
   exit 0
 fi
 
-git push --tags
+git push --follow-tags
 twine upload "$DIST_DIR/benchexec-$VERSION"*.{whl,whl.asc,tar.gz,tar.gz.asc}
 dput ppa:sosy-lab/benchmarking "$DIST_DIR/benchexec_$VERSION-1_source.changes"
 
@@ -143,6 +143,7 @@ while [[ $REPLY = "" ]]; do
 done
 sed -e "s/^__version__ = .*/__version__ = \"$REPLY\"/" -i benchexec/__init__.py
 git commit benchexec/__init__.py -m"Prepare version number for next development cycle."
+git push
 
 
 echo

@@ -1,3 +1,33 @@
+benchexec (3.35-1) resolute; urgency=medium
+
+  * New upstream version.
+
+ -- Philipp Wendler <debian@philippwendler.de>  Fri, 03 Jul 2026 13:17:52 +0200
+
+benchexec (3.34-1) noble; urgency=medium
+
+  * New upstream version.
+
+ -- Philipp Wendler <debian@philippwendler.de>  Mon, 02 Feb 2026 09:33:10 +0100
+
+benchexec (3.33-1) noble; urgency=medium
+
+  * New upstream version.
+
+ -- Philipp Wendler <debian@philippwendler.de>  Thu, 18 Dec 2025 10:59:09 +0100
+
+benchexec (3.32-1) noble; urgency=medium
+
+  * New upstream version.
+
+ -- Philipp Wendler <debian@philippwendler.de>  Tue, 09 Dec 2025 15:17:58 +0100
+
+benchexec (3.31-1) noble; urgency=medium
+
+  * New upstream version.
+
+ -- Philipp Wendler <debian@philippwendler.de>  Mon, 24 Nov 2025 07:16:09 +0100
+
 benchexec (3.30-1) noble; urgency=medium
 
   * New upstream version.

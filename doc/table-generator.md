@@ -104,8 +104,10 @@ by letting the tool info look for the given pattern in the output
 <column title="analysis time">Total time for analysis: </column>
 ```
 
-If the attribute `href` is given, the column will contain a link to the respective target
-(variables such as `${taskdef_name}` can be used to customize this link per task).
+If the attribute `href` is given, the column will contain a link to the respective target.
+Like in the benchmark definition,
+variables such as `${taskdef_name}` can be used to customize this link per task,
+and `${value}` will be replaced with the cell's value.
 If `href` specifies a relative path, it is interpreted as relative to the directory
 of the table-definition file and will be converted appropriately for the location of the output files.
 An absolute URL can also be given.
@@ -126,10 +128,12 @@ by using the following line in a table-definition file:
 
 Additionally, it is possible to specify columns that should be considered when comparing different
 results. In this case, `table-generator` produces an additional table with all rows the columns
-differ. The default behavior is to only compare the `status` column, but it is possible to use any
+differ. The default behavior is to compare the `status` column and the category of the result 
+(e. g. `correct` or `correct-unconfirmed`), but it is possible to use any
 column specified in the table-definition file by adding the attribute `relevantForDiff` with value
 `true` to the `column` tag. If the attribute `relevantForDiff` is specified at at least one column,
-only these columns will be taken for comparison.
+only these columns will be taken for comparison. Whenever the `status` column is compared, the
+category is compared as well.
 
 ### CSV Tables
 

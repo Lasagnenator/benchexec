@@ -35,7 +35,7 @@ checker.init(
     // The following is the list of currently allowed licenses for bundled code.
     // We can add other free licenses, but must adjust the licences for
     // build/vendors.min* in ../../../.reuse/dep5, the linkification code in
-    // src/components/Info.js and pyproject.toml accordingly,
+    // src/components/Info.tsx and pyproject.toml accordingly,
     // and run "reuse download --all".
     onlyAllow: "BSD-3-Clause; CC-BY-4.0; ISC; MIT",
     customFormat: {
@@ -99,7 +99,7 @@ checker.init(
         // Many license texts differ only in a small header.
         // Because we show the copyright and the license name separately anyway,
         // we can remove such prefixes and increase the chance of deduplication.
-        // This list is a heuristic of currently occuring prefixes.
+        // This list is a heuristic of currently occurring prefixes.
         [
           "The ISC License",
           "MIT License",

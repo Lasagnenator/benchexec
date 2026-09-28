@@ -8,12 +8,13 @@
 import logging
 import re
 
-import benchexec.result as result
 import benchexec.tools.template
+from benchexec import result
 from benchexec.tools.sv_benchmarks_util import (
-    get_witness_options,
     get_non_witness_input_files,
+    get_witness_options,
 )
+from benchexec.tools.template import ToolNotFoundException
 
 
 class Tool(benchexec.tools.template.BaseTool2):
@@ -22,7 +23,10 @@ class Tool(benchexec.tools.template.BaseTool2):
     """
 
     def executable(self, tool_locator):
-        return tool_locator.find_executable("goblint")
+        try:
+            return tool_locator.find_executable("goblint_runner.py")
+        except ToolNotFoundException:
+            return tool_locator.find_executable("goblint")
 
     def version(self, executable):
         return self._version_from_tool(executable, line_prefix="Goblint version: ")
@@ -91,7 +95,7 @@ class Tool(benchexec.tools.template.BaseTool2):
                     return "ASSERTION"
                 else:
                     m = re.search(
-                        r"Fatal error: exception (Stack overflow|Out of memory|[A-Za-z._]+)",
+                        r"Fatal error: exception (Stack overflow|Out of memory|[A-Za-z0-9._]+)",
                         line,
                     )
                     if m:
@@ -113,9 +117,27 @@ class Tool(benchexec.tools.template.BaseTool2):
 
     def get_value_from_output(self, output, identifier):
         regex = re.compile(identifier)
+        if regex.groups == 0:
+            logging.error("no capture group in identifier '%s'", identifier)
+            return None
+        elif regex.groups > 1:
+            logging.warning(
+                "multiple capture groups in identifier '%s', using only first",
+                identifier,
+            )
+
+        first = "first" in regex.groupindex and regex.groupindex["first"] == 1
+        last = "last" in regex.groupindex and regex.groupindex["last"] == 1
+        # first and last are exclusive by construction
+
+        result = None
         for line in output:
             match = regex.search(line)
-            if match and len(match.groups()) > 0:
-                return match.group(1)
-        logging.debug("Did not find a match with regex %s", identifier)
-        return None
+            if match:
+                if result is None or last:
+                    result = match.group(1)
+                elif not first:
+                    logging.warning(
+                        "repeated match of identifier '%s', using first", identifier
+                    )
+        return result
